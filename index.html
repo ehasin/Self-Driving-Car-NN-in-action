@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Train a self-driving neural network</title>
+  <link rel="stylesheet" href="site.css">
+  <style>
+    /* Three layers of style: this block is shared by desktop and phones; desktop.css (wider than 720px) and mobile.css
+       (720px or narrower) hold each one's own layout and load last, so they win. A change for one goes in its file. */
+    .page { flex: none; width: 100%; margin: 0 auto; display: flex; flex-direction: column; position: relative; }
+    .page h1 { margin: 0; }
+    [hidden] { display: none !important; }
+
+    /* one column: the road first; the network sits on the road, right side, above the car; the tour below */
+    /* no scrolling: road, network and tour share the screen height; the road is short and wide */
+    .demo { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; gap: 0.6rem; }
+    .demo > #netbox { flex: 1; min-height: 0; }
+    /* the tour floats on the road, left side (after the speed control) */
+    .demo > .tour { position: absolute; z-index: 3; top: 0.8rem; left: 2.6rem; width: 34%; height: calc(66.6% - 1.9rem); overflow: auto;
+                    background: rgba(251,250,246,0.94); display: none; }   /* hidden for now */
+    #link { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 4; }
+    .stage, .tour, .box { position: relative; min-height: 0; border: 1.5px solid var(--rule); border-radius: 14px; background: var(--paper); }
+    .stage { overflow: hidden; }
+    .stage > canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+    /* the one call to action: green, and it pulses */
+    button.cta { background: #1fa463; border-color: #1fa463; color: #fff; font-weight: 600; }
+    button.cta:hover { background: #1a8f56; }
+    button.cta:disabled { background: var(--paper); border-color: var(--rule); color: var(--muted); opacity: 1; }
+    button.pulse:not(:disabled) { animation: pulse 1.8s ease-out infinite; }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(31,164,99,0.55); } 70%, 100% { box-shadow: 0 0 0 0.8rem rgba(31,164,99,0); } }
+    @media (prefers-reduced-motion: reduce) { button.pulse:not(:disabled) { animation: none; box-shadow: 0 0 0 4px rgba(31,164,99,0.35); } }
+    /* the dashboard under the car, centred, 80% of the road: 3 equal sections, speed, safe distance and Move! each centred in its own (placeNet puts the output neuron under Move!) */
+    #dash { box-sizing: border-box; position: absolute; z-index: 2; left: 50%; width: 80%; transform: translate(-50%, -50%); display: grid; grid-template-columns: repeat(3, 1fr); align-items: center; justify-items: center; padding: 0.4rem 0.45rem;
+            border-radius: 14px; background: rgba(22,26,34,0.84); color: #fff; box-shadow: 0 6px 18px rgba(0,0,0,0.35); white-space: nowrap; }
+    #move { width: 11rem; max-width: calc(100% - 0.9rem); box-sizing: border-box; }
+    #move { font-size: 1.2rem; padding: 0.4rem 0; border-radius: 10px;
+            border: 1.5px solid #1f4fa8; background: linear-gradient(#4a8af0, #2a64cc); box-shadow: 0 4px 0 #1c4590, 0 6px 12px rgba(0,0,0,0.35); }
+    #move.moving { background: #9aa1aa; border-color: #848b94; box-shadow: none; color: #eef0f3; cursor: default; filter: none; transform: none; }   /* your click, waiting for its lane change */
+    #move:active, #move.press { transform: translateY(5px) scale(0.94); filter: brightness(0.75); box-shadow: 0 0 0 #1c4590, 0 1px 2px rgba(0,0,0,0.3); }
+    .speed { display: grid; grid-template-columns: 1fr auto 1fr; justify-items: end; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: #c9d3e3; }   /* the slider in the middle */
+    .speed input { width: 5.5rem; margin: 0; accent-color: #cfe0fa; }   /* the switches' light blue */
+    .speed output { justify-self: start; font-weight: 600; color: #fff; font-variant-numeric: tabular-nums; }
+    #safe { justify-self: stretch; padding: 0 0.5rem; border-left: 1px solid rgba(255,255,255,0.2); border-right: 1px solid rgba(255,255,255,0.2); font-size: 0.75rem; color: #c9d3e3; text-align: center; }
+    #safe b { margin-left: 0.3rem; font-size: 1.15rem; color: #fff; font-variant-numeric: tabular-nums; }
+    #reset { position: absolute; z-index: 2; transform: translateY(-50%); padding: 0.1em 0.6em; border-radius: 6px; border: 1.5px solid #d6eadf; background: none; color: #fff; font-weight: 600; line-height: 1.3; }
+    #reset:hover { background: rgba(255,255,255,0.15); }
+
+    /* onboarding: the part the step is about gets a green frame */
+    .stage, .box { transition: border-color .4s, box-shadow .4s; }
+    #net text { font-size: 30.8px !important; }   /* the network is short now: much larger text */
+    #net text.hval { font-size: 24.2px !important; }   /* the hidden values: smaller, inside their squares */
+    #net text.bl { font-size: 21.1px !important; font-weight: 700; }   /* the biases, under their neurons */
+    #net .dec text { font-size: 21px !important; font-weight: 700; }   /* the output's decision, Stay / Move! (the tour's card step) */
+    #net text.oname { font-size: 23px !important; font-weight: 700; }   /* the Atari network: each output names its move */
+    #net text.wl { font-size: 21.1px !important; font-weight: 700; stroke-width: 8px; }   /* the numbers on the lines: small, on a wide paper-coloured halo so they read over any line */
+    @keyframes spot { 0% { box-shadow: 0 0 0 0 rgba(31,164,99,0.5); } 100% { box-shadow: 0 0 0 4px rgba(31,164,99,0.18); } }
+    .tour-body ul.plain { margin: 0 0 0.7rem; padding-left: 1.1rem; }
+
+    /* ---------------- the tour (middle) */
+    .tour { display: flex; flex-direction: column; padding: 0.9rem 1.2rem 1rem; }
+    .track { list-style: none; margin: 0 0 0.9rem; padding: 0; display: flex; gap: 0.3rem; }
+    .track button { flex: 1; min-width: 0; padding: 0.3rem 0.1rem 0.25rem; border: 0; border-bottom: 3px solid var(--rule); border-radius: 0; background: none;
+                    font-size: 0.68rem; font-weight: 600; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .track li { flex: 1; min-width: 0; display: flex; }
+    .track button.done { color: var(--ink); border-bottom-color: var(--answer); }
+    .track button.on { color: var(--ink); border-bottom-color: var(--ink); }
+    .track button:disabled { opacity: 1; color: #bdb8ab; }
+    .tour-body { flex: 1; min-height: 0; overflow: auto; font-size: 0.9rem; line-height: 1.5; padding-right: 0.2rem; }
+    .tour-body h2 { margin: 0 0 0.6rem; font-size: 1.3rem; line-height: 1.25; letter-spacing: -0.01em; }
+    .tour-body .kicker { margin: 0 0 0.2rem; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+    .tour-body p { margin: 0 0 0.7rem; }
+    .tour-body .pro { color: var(--muted); font-size: 0.8rem; }
+    .tour-body .note { color: var(--muted); font-size: 0.82rem; }
+    .tour-foot { display: flex; align-items: center; gap: 0.6rem; padding-top: 0.8rem; border-top: 1px solid var(--rule); }
+    #back { font-size: 0.85rem; }
+    #next { margin-left: auto; font-size: 1.05rem; padding: 0.55rem 1.3rem; }
+    .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 0 0 0.7rem; }
+    .row select { font-size: 0.85rem; }
+
+    /* step 2: the parts of the network; hovering one highlights it */
+    .parts { list-style: none; margin: 0 0 0.7rem; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+    .parts li { padding: 0.45rem 0.65rem; border: 1.5px solid var(--rule); border-radius: 10px; cursor: default; transition: border-color .2s, background .2s; }
+    .parts li:hover { border-color: var(--ink); background: var(--sunk); }
+    .parts b { display: block; }
+
+    /* step 3 and 7: what happened, in a box */
+    .story { border: 1.5px solid var(--rule); border-radius: 10px; padding: 0.55rem 0.75rem; margin: 0 0 0.7rem; background: var(--sunk); }
+    .story.bad { border-color: #e2a59c; background: #fff6f3; }
+    .story.good { border-color: #9fd8b9; background: #f1fbf5; }
+    .story p:last-child { margin-bottom: 0; }
+
+    /* step 4: the three methods */
+    .methods { display: flex; flex-direction: column; gap: 0.5rem; margin: 0 0 0.7rem; }
+    .method { position: relative; text-align: left; display: block; width: 100%; padding: 0.65rem 0.8rem; border: 1.5px solid var(--rule); border-radius: 12px; background: var(--paper); font-size: 0.86rem; line-height: 1.45; }
+    .method b { font-size: 1rem; }
+    .method small { display: block; color: var(--muted); font-size: 0.74rem; margin-top: 0.2rem; }
+    .method.rec { border-color: #1fa463; box-shadow: 0 0 0 3px rgba(31,164,99,0.12); }
+    .method .tag { position: absolute; top: 0.6rem; right: 0.7rem; font-size: 0.68rem; font-weight: 700; padding: 0.05rem 0.45rem; border-radius: 4px; background: #1fa463; color: #fff; }
+    .method:disabled { opacity: 0.55; }
+    .method:disabled .tag { background: var(--muted); }
+
+    /* step 5: the question and the deck */
+    .ask { display: flex; gap: 0.5rem; margin: 0 0 0.6rem; }
+    .ask button { flex: 1; font-size: 1.05rem; padding: 0.55rem 0.6rem; font-weight: 600; }
+    .ask button.picked { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+    .sees { font-size: 0.82rem; color: var(--muted); margin: 0 0 0.6rem; }
+    .hint { position: relative; border: 1.5px solid #c0392b; border-radius: 10px; background: #fff6f3; padding: 0.55rem 0.75rem; font-size: 0.82rem; line-height: 1.45; margin: 0 0 0.6rem; }
+    .good { color: #1a8a52; font-weight: 650; margin: 0 0 0.6rem; }
+    .deck { display: grid; grid-template-columns: repeat(4, minmax(0, 5.2rem)); gap: 0.9rem 0.6rem; margin-top: 0.4rem; }
+    .slot { position: relative; padding: 0.15rem; border: 1.5px dashed var(--rule); border-radius: 6px; background: var(--paper); aspect-ratio: 120 / 190; }
+    .slot.full { border-style: solid; }
+    .slot.cur { border-color: var(--ink); border-style: solid; }
+    .slot .badge { position: absolute; left: 50%; bottom: -0.5rem; transform: translateX(-50%); font-size: 0.68rem; font-weight: 700; padding: 0 0.25rem; border-radius: 4px; background: var(--ink); color: var(--paper); white-space: nowrap; }
+    .slot .badge.move { background: linear-gradient(#4a8af0, #2a64cc); color: #fff; }   /* Move!: blue, as the Move! button */
+    .slot .badge.off { background: #c0392b; }   /* a wrong answer: red wins */
+    .slot .n { position: absolute; inset: 0; display: grid; place-items: center; color: #c9c4b6; font-weight: 700; font-size: 0.8rem; }
+    .slot.pop { animation: pop .45s ease; }
+    .slot.pop-b .badge { animation: pop-b .45s ease; }   /* an answer, added to the card on show */
+    @keyframes pop-b { 0% { transform: translateX(-50%) scale(0.6); opacity: 0; } 70% { transform: translateX(-50%) scale(1.15); } 100% { transform: translateX(-50%) scale(1); opacity: 1; } }
+    @keyframes pop { 0% { transform: scale(0.6); opacity: 0; } 70% { transform: scale(1.08); } 100% { transform: scale(1); opacity: 1; } }
+
+    /* ---------------- the training board (left, step 6) */
+    #board { position: absolute; inset: 0; padding: 0.9rem 1rem 0.8rem; display: flex; flex-direction: column; gap: 0.5rem; overflow: auto; }
+    .pile-h { display: flex; align-items: baseline; gap: 0.5rem; font-size: 0.86rem; font-weight: 650; }
+    .pile-h .vloss { margin-left: 0.2rem; font-size: 1.6rem; line-height: 1; color: #2f6bd6; font-variant-numeric: tabular-nums; }   /* the number to watch */
+    .pile-h .spark { align-self: center; width: 7rem; height: 1.6rem; }   /* the loss per epoch, a column each, beside the number */
+    .pile-h small {font-weight: 500; color: var(--muted); font-size: 0.74rem; }
+    .pile-h .vcap { margin-left: auto; }   /* the caption and its (i) at the right edge */
+    .pile { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; }
+    .cardsvg { display: block; width: 100%; height: auto; max-height: 13.5rem; }
+    .card { position: relative; border: 1.5px solid var(--rule); border-radius: 10px; background: var(--paper); padding: 0.3rem 0.35rem 0.35rem; transition: border-color .25s, box-shadow .25s, opacity .25s; }
+    .card .you { margin-top: 0.25rem; font-size: 0.72rem; font-weight: 600; line-height: 1.2; }
+    .card .you .muted { color: var(--muted); font-weight: 500; }
+    .warn { color: #c0392b; cursor: help; }
+    .pbar { display: flex; height: 0.5rem; margin-top: 0.25rem; border-radius: 3px; overflow: hidden; background: var(--rule); }
+    .pbar span { width: 50%; transition: width .6s ease; }
+    .pbar .ps { background: #8f8a7d; }
+    .pbar .pc { background: #2f6bd6; }
+    .pl { display: flex; justify-content: space-between; font-size: 0.64rem; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 0.1rem; }
+    .mark { position: absolute; top: -0.5rem; right: -0.5rem; width: 1.35rem; height: 1.35rem; border-radius: 50%; display: grid; place-items: center; font-size: 0.78rem; font-weight: 700; color: #fff; }
+    .mark.ok { background: var(--answer); }
+    .mark.bad { background: var(--negative); }
+    .mark.tie { background: #b5b0a3; }
+    #board .card { cursor: pointer; }   /* click one: its situation goes through the network */
+    .card.pick { animation: card-pick 0.5s ease-in-out; z-index: 1; }   /* picked: grows a little and back */
+    @keyframes card-pick { 50% { transform: scale(1.1); } }
+    .card.hot { border-color: var(--ink); box-shadow: 0 0 0 3px rgba(22, 21, 15, 0.1); }
+    .card.err { border-color: var(--negative); }
+    .card.dim { opacity: 0.4; }
+    .deal { animation: deal .5s ease both; }
+    @keyframes deal { from { opacity: 0; transform: translateY(-1rem) scale(0.92); } }
+    .epochs { margin-top: auto; border-top: 1px dashed var(--rule); padding-top: 0.5rem; }
+
+    /* tooltips: hover or focus a ⓘ */
+    .tip { position: relative; display: inline-grid; place-items: center; width: 1.05rem; height: 1.05rem; border-radius: 50%; border: 1.2px solid var(--muted); color: var(--muted); font: 700 0.62rem/1 ui-sans-serif, system-ui, sans-serif; cursor: help; vertical-align: 0.1em; }
+    .tip:hover::after, .tip:focus::after { content: attr(data-tip); position: absolute; z-index: 20; left: 50%; top: 1.5rem; transform: translateX(-50%); width: 16rem; padding: 0.5rem 0.65rem; border-radius: 8px; background: var(--ink); color: var(--paper); font: 500 0.75rem/1.4 ui-sans-serif, -apple-system, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif; text-align: left; white-space: normal; box-shadow: 0 4px 14px rgba(0,0,0,.18); text-transform: none; letter-spacing: 0; }
+    .tip.up:hover::after, .tip.up:focus::after { top: auto; bottom: 1.5rem; }
+    .tip.left:hover::after, .tip.left:focus::after { left: auto; right: -0.5rem; transform: none; }
+
+    /* ---------------- the network (right) */
+    .box { display: flex; flex-direction: column; padding: 0.7rem 0.9rem 0.6rem; }
+    .box-h { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; font-size: 0.9rem; font-weight: 650; }
+    .box-h .sub { display: block; font-size: 0.74rem; font-weight: 500; color: var(--muted); }
+    .switch { display: inline-flex; border: 1.5px solid var(--rule); border-radius: 999px; padding: 2px; }
+    .switch label { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.15rem 0.6rem; font-size: 0.76rem; color: var(--muted); cursor: pointer; border-radius: 999px; }
+    .switch label:has(input:checked) { color: var(--ink); background: var(--sunk); }
+    .switch input { margin: 0; accent-color: var(--ink); }
+    .netwrap { flex: 1; min-height: 0; position: relative; }
+    /* The network's switches (Weights / Impact bottom right, Autopilot top right): a small two-part pill, the knob slides to
+       the chosen side; each half has a finger-sized hit area */
+    .pill { position: relative; display: grid; grid-template-columns: 1fr 1fr; padding: 2px;
+            border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); }
+    .pill::before { content: ""; position: absolute; top: 2px; bottom: 2px; left: 2px; width: calc(50% - 2px); border-radius: 999px;
+                    background: #cfe0fa; box-shadow: 0 1px 2px rgba(0,0,0,0.18); transition: transform .3s ease; }
+    .pill[data-i="1"]::before { transform: translateX(100%); }
+    .pill button { position: relative; border: 0; background: none; padding: 0.15rem 0.6rem; font: 600 0.68rem system-ui, sans-serif;
+                   color: var(--muted); cursor: pointer; transition: color .3s; }
+    .pill button::after { content: ""; position: absolute; inset: -10px -2px; }   /* the bigger hit area */
+    .pill button[aria-pressed="true"] { color: var(--ink, #16150f); }
+    #view { position: absolute; top: 0; left: 0; z-index: 1; }
+    #autobox { position: absolute; top: 0; right: 0; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 0.15rem;   /* the caption under its switch */
+               font: 600 0.68rem system-ui, sans-serif; color: var(--muted); }
+    #net { position: absolute; inset: 0; width: 100%; height: 100%; display: block; transition: opacity .6s; }
+    #net .dist select { box-sizing: border-box; width: 100%; height: 100%; font: 600 22px system-ui, sans-serif; color: #1c2430; background: #fff;
+                        border: 2px solid #1fa463; border-radius: 6px; padding: 0 4px; cursor: pointer; }   /* the input distances, in the tour's card step */
+    #net-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 0.9rem; text-align: center; padding: 2rem; }
+    .legend { position: absolute; bottom: 0; left: 0; z-index: 1; display: flex; flex-direction: column; margin: 0; font-size: 0.72rem; line-height: 1.5; color: var(--muted); pointer-events: none; }   /* stacked, bottom left */
+    .legend .lg { white-space: nowrap; }
+    /* the corners: Weights / Impact top left, Autopilot top right, the network switch bottom right; stacked pills, the knob
+       slides down to the chosen one */
+    .pill.vert { grid-template-columns: 1fr; border-radius: 12px; }
+    .pill.vert::before { left: 2px; right: 2px; width: auto; height: calc(50% - 2px); border-radius: 10px; }
+    .pill.vert[data-i="1"]::before { transform: translateY(100%); }
+    .pill.vert button { padding: 0.1rem 0.6rem; }
+    .pill.vert button::after { inset: -2px -10px; }   /* the bigger hit area, sideways: the buttons sit on top of each other */
+    #model { position: absolute; bottom: 0; right: 0; z-index: 1; }
+    #model::before { height: var(--h, 0); transform: translateY(var(--y, 0)); transition: transform .3s ease, height .3s ease; }   /* app.js: the chosen one */
+    .legend i { display: inline-block; width: 1.3rem; height: 0.22rem; border-radius: 2px; vertical-align: middle; margin: 0 0.4rem 0 0; }
+
+    #net .w { stroke-linecap: round; transition: stroke-width .35s ease, stroke .35s ease, opacity .35s ease; }
+    #net.slow .w { transition-duration: 0.5s; }
+    #net.quick .w, #net.quick .fillr, #net.quick .hidr, #net.quick .ring { transition: none; }   /* a network's drive: no lag behind the decisions */
+    .box.off #show, .box.off .legend, .box.off #model, .box.off .box-h .sub { visibility: hidden; }
+    #net .base { stroke: #dcd7ca; stroke-width: 1.5; opacity: 0; }
+    #net .flow { fill: none; stroke-linecap: round; stroke-dasharray: 4 14; opacity: 0; }
+    #net .flow.on { animation: flow .7s linear infinite, appear .3s ease forwards; }
+    #net .wl { font: 700 15px ui-sans-serif, system-ui, sans-serif; paint-order: stroke; stroke: #fbfaf6; stroke-width: 5px; stroke-linejoin: round; }
+    #net .fillr { transition: height .35s ease, y .35s ease; }
+    #net .hidr { transition: fill .35s; }
+    #net .ring { fill: none; stroke: #1fa463; stroke-width: 4; opacity: 0; transition: opacity .25s; }
+    #net .ring.on { opacity: 1; }
+    #net .errr { fill: none; stroke: var(--negative); stroke-width: 4; opacity: 0; }
+    #net .errr.on { animation: blink 0.9s ease-in-out infinite; }
+    #net .L { transition: opacity .25s; }
+    #net[data-focus] .L { opacity: 0.18; }
+    #net[data-focus="in"] .L.in, #net[data-focus="hid"] .L.hid, #net[data-focus="out"] .L.out, #net[data-focus="edges"] .L.edges { opacity: 1; }
+    @keyframes flow { to { stroke-dashoffset: -36; } }
+    @keyframes appear { to { opacity: 0.95; } }
+    @keyframes blink { 0%, 100% { opacity: 0.15; } 50% { opacity: 0.9; } }
+
+    /* bouncing arrow under the demo: points to the explainer (digit page rules) */
+    .more { height: 30px; padding: 0; border: 0; background: none; color: var(--muted); }
+    .more:hover { background: none; color: var(--ink); }
+    .more svg { display: block; animation: nudge 1.6s ease-in-out infinite; }
+    @keyframes nudge { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(6px); } }
+    @media (prefers-reduced-motion: reduce) { .more svg { animation: none; } }
+    /* explainer below the demo: a fixed reading width (as on the digit demo, in px) */
+    .wrap.explain { max-width: 704px; margin-bottom: 28px; font-size: 17px; }
+    .explain h2 { font-size: 22px; line-height: 1.25; letter-spacing: -0.02em; font-weight: 600; margin: 32px 0 8px; }
+    .explain h2:first-child { margin-top: 0; }
+    .explain p, .explain ul { margin: 0 0 12px; }
+    .explain ul { padding-left: 22px; }
+    .explain li { margin-bottom: 6px; }
+    .totop { text-align: center; margin-top: 28px !important; }
+    .totop button { font-size: 14px; }
+
+  </style>
+  <link rel="stylesheet" href="desktop.css" media="(min-width: 721px)">
+  <link rel="stylesheet" href="mobile.css" media="(max-width: 720px)">
+</head>
+<body>
+  <main class="page">
+    <h1>Train a self-driving neural network</h1>
+
+    <div class="demo">
+      <section class="stage" aria-label="The road">
+        <canvas id="road" aria-label="The road ahead of the car"></canvas>
+        <div id="dash">
+          <label class="speed" id="speed">Speed <input type="range" id="speed-in" min="0" max="10" step="1" value="1" aria-label="Driving speed"> <output id="speed-out">1</output></label>
+          <div id="safe">Safely driven <b id="safe-m">0 m</b></div>
+          <button id="move" class="cta">Move!</button>
+        </div>
+        <button id="reset" hidden title="Set the best distance back to 0">Reset</button>
+        <div id="board" hidden>
+          <div class="pile-h">Training cards <small>the network studies these</small> <span class="tip" tabindex="0" data-tip="Professionals call it the training set. The network adjusts its weights to match your answers on these 4 cards.">i</span></div>
+          <div class="pile" id="pile-learn"></div>
+          <div class="pile-h">Validation cards <small>never studied, only checked</small> <span class="tip left" tabindex="0" data-tip="Professionals call it the validation set. One similar card for each learn card, at other distances. Right answers here mean it learned the rule, not just 4 answers.">i</span></div>
+          <div class="pile" id="pile-check"></div>
+          <div class="epochs">
+            <div class="pile-h">Validation loss <b class="vloss" id="vloss"></b><svg class="spark" id="vspark" viewBox="0 0 110 24" aria-label="Validation loss per epoch"></svg><small class="vcap">the rate of error on the validation cards; lower is better</small> <span class="tip up left" tabindex="0" data-tip="How far the network's answers on the validate cards are from yours, after every epoch. 0.69 = a 50/50 guess; 0 = sure and right. Training stops once an epoch lowers it by less than 0.03: more epochs would barely help. If it rises, the network is memorizing the training cards (overfitting).">i</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="tour" aria-label="Guided tour">
+        <ol class="track" id="track"></ol>
+        <div class="tour-body" id="tour-body"></div>
+        <div class="tour-foot"><button id="back">‹ Back</button><button id="next" class="cta pulse">Next ›</button></div>
+      </section>
+
+      <aside class="box" id="netbox" aria-label="The network">
+        <span id="net-sub" hidden></span>
+        <div class="netwrap">
+          <svg id="net" viewBox="-550 0 1100 420" preserveAspectRatio="xMidYMid meet" aria-label="The network"></svg>
+          <div id="net-empty">The car's brain appears in step 2.</div>
+          <div id="autobox"><div class="pill" id="auto" role="group" aria-label="Autopilot" data-i="0"><button data-v="on" aria-pressed="true">On</button><button data-v="off" aria-pressed="false">Off</button></div>Autopilot</div>
+          <div class="pill vert" id="view" role="group" aria-label="Network view" data-i="1"><button data-v="weights" aria-pressed="false">Weights</button><button data-v="impact" aria-pressed="true">Impact</button></div>
+          <p class="legend" id="legend"></p>
+          <div class="pill vert" id="model" role="group" aria-label="The network trained by"><button data-v="flash" aria-pressed="true">Flashcards</button><button data-v="copy" aria-pressed="false">Copycat</button><button data-v="atari" aria-pressed="false">Trial &amp; Error</button></div>
+        </div>
+      </aside>
+
+      <svg id="link" aria-hidden="true"><defs><marker id="link-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#111"/></marker></defs>
+        <line id="link-line" stroke="#111" stroke-width="2.5" marker-end="url(#link-head)"/></svg>
+    </div>
+    <button type="button" class="more" aria-label="Scroll down to read more" onclick="document.querySelector('.explain').scrollIntoView({ behavior: 'smooth' })">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+  </main>
+
+  <section class="wrap explain">
+    <p>I built these two explainers for my kids and anyone new to neural networks, to show how machines learn and make decisions. Here, you can teach a small network to drive and see how your examples and feedback shape its behaviour.</p>
+    <h2>How does a network learn to drive?</h2>
+    <p>Take the tour, or pick a method under <strong>Train a model</strong>. Each method starts from an untrained network and ends with the same test: 500 m of road it has never seen.</p>
+    <p>An untrained network has random connections, so its moves are random too: in the tour, it drives straight into a parked car. Learning means adjusting those connections, called <em>weights</em>, until its moves avoid collisions. The three methods differ in where the feedback comes from: your answers, your driving, or points and penalties.</p>
+    <h2>What does the car actually see?</h2>
+    <p>You see a road scene. The network receives two numbers from a radar:</p>
+    <ul>
+      <li><strong>My lane:</strong> how close the nearest parked car in its own lane is.</li>
+      <li><strong>Other lane:</strong> the same, for the other lane.</li>
+    </ul>
+    <p>Each is 1 for a car 10 m ahead, down to 0.13 at 80 m, and 0 when the lane is clear. It receives these numbers directly. It does not recognise cars from the road image.</p>
+    <p>The two inputs feed three neurons in the hidden layer, and those feed the output. Each connection has a weight, and each neuron a <em>bias</em>: a base value, added to what comes in.</p>
+    <p>The network has two views. <strong>Weights</strong> shows the weights themselves: green positive, magenta negative, thicker means stronger. <strong>Impact</strong> shows what each connection contributes right now: its weight times the value it carries. Green pushes the next neuron up, magenta pushes it down.</p>
+    <h2>How does it decide?</h2>
+    <p>With Flashcards and Copycat, the output is one number between 0 and 1. Above 0.5, the network presses <strong>Move!</strong> and changes lane.</p>
+    <p>Trial &amp; Error has two outputs, one per move: <strong>Stay</strong> and <strong>Move!</strong>. Each estimates the points that move will earn from here on, so they are scores, not probabilities. The car takes the higher one.</p>
+    <h2>Flashcards: learning from labelled examples</h2>
+    <p>You label 8 road situations with the right move. The network studies 4 of them, the <em>training set</em>. The other 4, the <em>validation set</em>, are only checked. They help us see whether it can apply what it learned to examples it did not study.</p>
+    <p>Training runs in cycles called <em>epochs</em>. Each cycle checks the network's answers and adjusts its weights and biases to reduce mistakes. This adjustment is called <em>backpropagation</em>. The other four cards check whether it can apply what it learned to other examples. Training stops once those answers are right and further improvement is small, or after 10 cycles.</p>
+    <p>This is <strong>supervised learning: learning from examples with answers attached</strong>, as in the <a href="https://github.com/ehasin/Visual-Digit-Recognition-CNN-in-action">digit demo</a>. The network has no idea what is right: it learns your answers. Label a card wrong, and the test road shows the wrong move it learned.</p>
+    <h2>Copycat: learning by watching you</h2>
+    <p>You drive 200 m, changing lane with <strong>Move!</strong>. Every 10 m, what the radar sees becomes a question and your move its answer, and the network learns from it straight away. A collision is learned as the opposite move.</p>
+    <p>This is <em>imitation learning</em>, or <em>behavioural cloning</em>. Your driving examples matter: if you only change lanes at the last moment, it may learn that habit too. It has only practised the situations you showed it.</p>
+    <h2>Trial &amp; Error: learning from consequences</h2>
+    <p>Nobody shows it the right move. It practises alone, and every move earns points or penalties:</p>
+    <ul>
+      <li>−20 for hitting a parked car.</li>
+      <li>−1.2 for changing lanes.</li>
+      <li>Another −6 for changing lanes at the last moment (the parked car 10 m ahead), or −3 a little earlier (20 m ahead). From 30 m on, nothing extra.</li>
+    </ul>
+    <p>Collisions cost by far the most. Unnecessary lane changes cost points. Together, these rules encourage the car to move only when needed, and early enough.</p>
+    <p>At first, half its moves are random, to explore its options; the share falls to 2% over its first 400 decisions, on a fixed schedule. It remembers what it saw, what it did, and the points it got, and keeps replaying samples of those memories, adjusting its weights so each score better predicts the points that move really leads to.</p>
+    <p>This is <strong>reinforcement learning: learning from the consequences of actions.</strong> The method used here is called <em>Deep Q-learning</em>. The network discovers how to earn points. We decide what earns them.</p>
+    <p>Deep Q-learning made its name on old Atari video games. In 2015, DeepMind showed that one network could learn 49 of them from the screen and the score alone, playing many as well as a professional games tester. DeepMind went on to combine deep networks with reinforcement learning in AlphaGo, which in 2016 beat Lee Sedol, one of the world's best Go players. Its successor, AlphaGo Zero, learned Go by playing against itself alone. The story is told in the free documentary <a href="https://www.youtube.com/watch?v=WXuK6gekU1Y">AlphaGo – The Movie</a>.</p>
+    <h2>What has it actually learned?</h2>
+    <p>Whatever the method, the result is the same kind of thing: fewer than 20 numbers, its weights and biases. They hold a strategy for this task only: two lanes, parked cars, and a radar that sees 80 m ahead.</p>
+    <p>It cannot anticipate obstacles beyond its view. Passing one test road also does not guarantee success on every road. Once trained, its weights stay fixed: when it drives on, it uses what it learned, and learns nothing new.</p>
+    <p>In the <a href="https://github.com/ehasin/Visual-Digit-Recognition-CNN-in-action">digit demo</a>, the training examples shape what the network recognises. Here, your cards, your driving or the points shape how it behaves. In both, learning changes the weights, and those weights change the answer.</p>
+    <h2>Want more?</h2>
+    <ul>
+      <li><a href="https://github.com/ehasin/Self-Driving-Car-NN-in-action">Source on GitHub</a>:
+        the code of this demo, including the training.</li>
+      <li><a href="https://github.com/ehasin/Visual-Digit-Recognition-CNN-in-action">The digit demo</a>:
+        a different network, trained with labelled examples.</li>
+      <li><a href="https://www.3blue1brown.com/lessons/neural-networks">But what is a neural network?</a> by 3Blue1Brown:
+        the best-known 20-minute introduction to how a network works.</li>
+      <li><a href="https://arxiv.org/abs/1604.07316">End to End Learning for Self-Driving Cars</a>, NVIDIA, 2016:
+        a real car that learned to steer by copying human drivers, the idea behind Copycat.</li>
+      <li><a href="https://huggingface.co/learn/deep-rl-course/unit3/introduction">Deep Q-Learning</a> in the Hugging Face Deep RL Course:
+        a free, hands-on course; this unit covers the method Trial &amp; Error uses.</li>
+      <li><a href="https://www.nature.com/articles/nature14236">Human-level control through deep reinforcement learning</a>, DeepMind, Nature 2015:
+        the paper that introduced Deep Q-learning, on Atari games.</li>
+      <li><a href="https://www.youtube.com/watch?v=WXuK6gekU1Y">AlphaGo – The Movie</a>, Google DeepMind:
+        the award-winning documentary about AlphaGo's match against Lee Sedol, free to watch.</li>
+    </ul>
+    <p class="totop"><button type="button" onclick="window.scrollTo({ top: 0, behavior: 'smooth' })">Back to top</button></p>
+  </section>
+
+  <footer>
+    <div class="wrap">
+      <span>Built by <a href="https://www.linkedin.com/in/evgenihasin/"><strong>Evgeni&nbsp;Hasin</strong></a></span>
+      <ul>
+        <li><a href="https://github.com/ehasin/Self-Driving-Car-NN-in-action">Source on GitHub</a></li>
+      </ul>
+    </div>
+  </footer>
+
+  <script type="module" src="app.js"></script>
+<script type="module" src="onboard.js"></script>
+</body>
+</html>

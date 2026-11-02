@@ -1,0 +1,94 @@
+/* Phones only (720px wide or less): index.html links it with a media query, after the shared styles and onboard.js's,
+   so it wins and desktop never sees it. Desktop changes go in desktop.css. app.js's PHONE follows the same query. */
+
+html { font-size: 14px; }
+
+/* ---------------- the page: the demo fills the screen above the footer (3.25rem); the road takes what the network leaves.
+   A short screen scrolls a little instead: the road keeps room for the longest bubbles above the car, and training for
+   its cards; on a 760px-high screen, the arrow to the explainer still shows */
+.page { height: max(calc(100svh - 3.25rem), 51rem); padding: 0.5rem 8px 0; gap: 0.4rem; }
+.ob-train .page { height: max(calc(100svh - 3.25rem), 57rem); }
+.page h1 { font-size: 1.35rem; }
+.demo { gap: 0.4rem; }
+.demo > .stage { flex: 1 1 0; }
+.demo > #netbox { flex: 0 0 16rem; }
+.more { align-self: center; height: 26px; }   /* the arrow to the explainer, under the demo */
+.wrap.explain { padding: 0 16px; margin-top: 24px; }
+
+/* ---------------- the dashboard: almost the road's width, 25-50-25 (app.js's placeNet); the speed and the distance under
+   their captions */
+#dash { width: 96%; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr); padding: 0.35rem 0.3rem; }
+.speed { justify-self: stretch; grid-template-columns: 1fr 1fr; column-gap: 0.3rem; row-gap: 0.1rem; padding: 0 0.35rem; font-size: 0.7rem; }
+.speed input { grid-area: 2 / 1 / 3 / 3; width: 100%; }
+#safe { padding: 0 0.3rem; font-size: 0.7rem; line-height: 1.2; }
+#safe b { display: block; margin: 0; font-size: 1.05rem; }
+#move { max-width: calc(100% - 0.5rem); font-size: 1.1rem; }
+
+/* ---------------- the network: the whole width (app.js's placeNet); over it its three switches in a row (Weights / Impact,
+   the network, Autopilot with its caption), under it the legend, centred */
+.box { padding: 0.5rem 0.6rem; }
+.netwrap { display: grid; grid-template-columns: auto auto auto; grid-template-rows: auto minmax(0, 1fr) auto; justify-content: space-between;
+           align-items: center; row-gap: 0.4rem; }
+#net { position: static; grid-area: 2 / 1 / 3 / 4; height: 100%; min-height: 0; overflow: visible; }   /* the output's value, right of Move!'s column, may reach into the box's padding */
+#autobox { position: relative; grid-area: 1 / 3; justify-self: end; flex-direction: row-reverse; gap: 0.3rem; z-index: 5;   /* in line: the caption, then its switch */
+           padding-left: 0.3rem; border-radius: 999px; background: var(--paper); }   /* over the arrow to Move!, which seems to pass through it */
+.legend { position: static; }
+#view, #model { position: relative; white-space: nowrap; }
+#view { grid-area: 1 / 1; justify-self: start; grid-template-columns: 1fr 1fr; border-radius: 999px; }
+#model { grid-area: 1 / 2; justify-self: center; grid-template-columns: repeat(3, auto); border-radius: 999px; }
+#view::before, #model::before { left: 2px; right: auto; width: calc(50% - 2px); height: auto; border-radius: 999px; }
+#view[data-i="1"]::before { transform: translateX(100%); }
+#model::before { width: var(--w, 0); transform: translateX(var(--x, 0)); transition: transform .3s ease, width .3s ease; }   /* app.js: the chosen one */
+.netwrap .pill button { padding: 0.15rem 0.22rem; font-size: 0.64rem; }   /* the three switches and the caption fit a 360px phone in one row */
+#autobox { font-size: 0.64rem; }
+@media (max-width: 370px) {   /* narrower: a little air between them */
+  .box { padding-inline: 0.4rem; }
+  .netwrap .pill button { padding-inline: 0.18rem; }
+  #autobox { gap: 0.2rem; padding-left: 0.2rem; }
+}
+#view button::after, #model button::after { inset: -10px -2px; }
+.legend { grid-area: 3 / 1 / 4 / 4; flex-direction: row; justify-content: center; gap: 1rem; line-height: 1.2; }
+
+/* ---------------- the tour */
+/* Train a model, after the tour: its buttons one above the other, top left (clear of Take the tour) */
+.ob-post-row { flex-direction: column; align-items: stretch; }
+/* step 7, once trained: the epoch slider on its own line above Back and Continue (beside them, it pushed Continue off the screen) */
+#intro .ob-nav { flex-wrap: wrap; }
+#intro .tr-ep { order: -1; flex: 1 0 100%; margin: 0 0 0.4rem; }
+#intro { left: 0.55rem; right: 0.55rem; max-height: calc(100% - 1.2rem); overflow: hidden auto; padding: 0 0.25rem 0.6rem; }   /* a long bubble scrolls instead of leaving the road; room for the shadows */
+#intro .ob-row { flex-direction: column; }                      /* bubbles side by side: one above the other */
+#intro .ob-row .ob-b { flex: none; min-height: 0; }
+
+/* the cards window: the situation above the 8 cards, in one row; a little above the dashboard's place and down to the
+   box's bottom, so Continue fits */
+.fc { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; align-content: start; row-gap: 0.35rem;
+      padding: 0.5rem 0.8rem; overflow-y: auto; margin-top: -0.9rem; bottom: 0.15rem; }
+.fc > div { gap: 0.3rem; min-height: auto; }   /* each half as tall as its content: squeezed, the feedback ran under the divider */
+.fc-q { padding-right: 0; }
+.fc-set { padding: 0.35rem 0 0; border-left: 0; border-top: 1px solid #e6e2d6; }
+.fc h3 { font-size: 1.15em; }
+.fc .ask { max-width: none; }
+.fc .ask button { padding: 0.35rem 0.6rem; }
+.fc-deck { grid-template-columns: repeat(8, minmax(0, 2.6rem)); justify-content: space-between; gap: 0.6rem 0.3rem; padding-bottom: 0.4rem; }   /* cards no wider than on a 390px phone: wider ones grew taller than the window */
+
+/* training: the two piles one above the other, the validation loss under them */
+.ob-train #board { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto minmax(0, 1fr) auto;
+                   padding: 0.2rem 0.6rem 0.4rem; }
+.ob-train #board > :nth-child(1) { grid-area: 1 / 1; } .ob-train #board > :nth-child(2) { grid-area: 2 / 1; }
+.ob-train #board > :nth-child(3) { grid-area: 3 / 1; } .ob-train #board > :nth-child(4) { grid-area: 4 / 1; }
+.ob-train #board > .epochs { grid-area: 5 / 1; }
+.ob-train #board .pile { gap: 0.4rem; }
+.ob-train #board .card { padding: 0.25rem 0.25rem 0.3rem; }
+.pl { font-size: 0.6rem; } .pl span { white-space: nowrap; }   /* Stay and Move! on one line */
+
+/* ---------------- the methods window: one column */
+.mw-cols { grid-template-columns: 1fr; gap: 0; }
+.mw-in { padding: 1rem; }
+.mw-go { align-self: stretch; }
+
+/* the tour's step bar: no room for the bookmarks' short names (Intro, Train); a step not on show is its number only */
+#intro .ob-tabs .ob-tab.ob-mark:not(.on) .nm { max-width: 0; opacity: 0; margin-left: 0; }
+/* the step on show takes the room left and its name ends in … if it must: Skip tour stays in view */
+#intro .ob-tabs .ob-tab.on { flex: 1 1 0; min-width: 0; display: flex; align-items: center; }
+#intro .ob-tabs .ob-tab.on .nm:not(.bk) { min-width: 0; white-space: nowrap; text-overflow: ellipsis; }
+#intro .ob-tabs .ob-tab:not(.on):not(.ob-skip) { min-width: 1.5rem; padding: 0 0.2rem; }   /* the numbers: narrow, more room for the name */
