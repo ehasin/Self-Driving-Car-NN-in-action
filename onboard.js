@@ -1,3 +1,4 @@
+import { shareBar } from "./share.js";
 // First-visit intro and onboarding. Takes over the middle section (tabs, guide text and Back/Next hidden) until done.
 // The explainer bubbles appear one by one under the intro, each with arrows to the parts it explains; older ones stay.
 const css = document.createElement("style");
@@ -199,6 +200,7 @@ function trainStep(me) {
   if (instant) return;
   document.body.classList.add("ob-about");                              // the controls, the board and the nav wait for OK
   bar.insertAdjacentHTML("afterbegin", `<div class="tr-intro">${ABOUT}<button class="cta tr-ok">OK</button></div>`);
+  later(0.3, () => bar.querySelector(".tr-ok")?.classList.add("on"));   // OK a brief moment after the bubble
   bar.querySelector(".tr-ok").onclick = () => { bar.querySelector(".tr-intro").remove(); document.body.classList.remove("ob-about"); };
 }
 // The trained network on the cards, board as in training: the text; a pause, the switch slides to Impact and, as the
@@ -456,13 +458,27 @@ function openMethods(open) {
     <div class="mw-head"><div><h2 id="mw-h">How should the network learn?</h2>
       <p>Three ways to teach the same network the same skill. Each ends with weights that make it drive; only the teacher differs.</p></div>
       <button class="mw-x" aria-label="Close">✕</button></div>
-    ${METHODS.map((m) => `<section class="mw-m${m.k === open ? " open" : ""}">
+    ${METHODS.map((m) => `<section class="mw-m${m.k === open ? " open" : ""}${res[m.k] || window.methodNet(m.k) ? "" : " new"}">
       <button class="mw-top" aria-expanded="${m.k === open}"><svg class="mw-ic" viewBox="0 0 28 28" aria-hidden="true">${ICONS[m.k]}</svg>
         <span class="mw-t"><b>The ${m.nick} method</b><span class="mw-pro">${m.pro} · Teacher: ${m.teacher}</span></span>${badge(m.k)}<span class="mw-chev" aria-hidden="true"></span></button>
       <div class="mw-body"><div class="mw-fold"><div class="mw-cols">
         <div><p class="mw-k">How it learns</p><p>${m.how}</p><p class="mw-k">Here</p><p>${m.here}</p></div>
         <div><p class="mw-k">In the real world</p><ul>${m.uses.map((u) => `<li>${u}</li>`).join("")}</ul><p class="mw-k">The catch</p><p>${m.catch}</p></div></div>
-        <button class="cta mw-go" data-k="${m.k}">${m.go}</button></div></div></section>`).join("")}</div>`;
+        <button class="cta mw-go" data-k="${m.k}">${m.go}</button></div></div></section>`).join("")}<div class="mw-share"></div></div>`;
+  const share = mw.querySelector(".mw-share");
+  shareBar(share);                                       // under the methods
+  // Every test passed: a green light runs over the share buttons, one at a time (0.06 s each), then a 2 s pause, again and
+  // again while the window is open.
+  if (METHODS.every((m) => res[m.k] && !res[m.k].crashed) && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const bs = [...share.querySelectorAll("a, button")];
+    let i = 0;
+    const run = () => {
+      if (!share.isConnected) return;                    // closed (each opening builds its own)
+      bs.forEach((b, k) => b.classList.toggle("lit", k === i));
+      if (i < bs.length) { i++; setTimeout(run, 60); } else { i = 0; setTimeout(run, 2000); }
+    };
+    setTimeout(run, 600);
+  }
   mw.querySelector(".mw-x").onclick = closeMethods;
   mw.querySelectorAll(".mw-top").forEach((b) => {
     b.onclick = () => {                                // open this one (or fold it), fold the others
@@ -489,8 +505,13 @@ function buildBar() {
   const { names, marks } = flow;
   stepBar.innerHTML = `<nav class="ob-tabs">${names.map((name, i) => `<button class="ob-tab${marks[i] ? " ob-mark" : ""}" data-at="${i}" title="${name}"><b>${i + 1}</b><span class="nm">${name}</span>${marks[i] && marks[i] !== name ? `<span class="nm bk">${marks[i]}</span>` : ""}</button>`).join("")}<button class="ob-tab ob-skip">${flow.leave}</button></nav>`;
   stepBar.querySelectorAll(".ob-tab[data-at]").forEach((b) => { b.onclick = () => show(Number(b.dataset.at)); });
-  stepBar.querySelector(".ob-skip").onclick = () => finish(true);
+  stepBar.querySelector(".ob-skip").onclick = () => { if (flow.leave === "Skip tour") markSeen(); finish(true); };
 }
+// A visitor who skipped the tour, or reached its last step, gets the app without it on the next load (this browser only;
+// with storage blocked, every load is a first visit). Take the tour still starts it.
+const SEEN = "car-tour-seen";
+const seen = () => { try { return localStorage.getItem(SEEN) === "1"; } catch { return false; } };
+const markSeen = () => { try { localStorage.setItem(SEEN, "1"); } catch {} };
 buildBar();
 intro.append(stepBar, stepBody);
 // One bubble per part, side by side; each shows on its turn (its place kept from the start). Under them: Back on the left
@@ -499,7 +520,8 @@ intro.append(stepBar, stepBody);
 function show(n, back = false) {
   if (n >= flow.steps.length) return finish();        // the last Continue: the flow is done
   const me = ++gen, s = flow.steps[n];
-  modelSwitch(false);                                 // the network switch: greyed out, on the flow's method, till it ends
+  if (flow.leave === "Skip tour" && n === flow.steps.length - 1) markSeen();   // the tour's last step: seen
+  modelSwitch(false);                                // the network switch: greyed out, on the flow's method, till it ends
   window.netUi.backprop(false);                       // step 4's backpropagation: only on its step
   closeCards(); window.selfDriveOff();                // the flashcards window: only on its step; the speed: back as it was
   document.body.classList.remove("ob-about");         // the training intro: only on its step
@@ -549,17 +571,17 @@ css.textContent += `
   .ob-post-row { display: flex; gap: 0.4rem; }
   .ob-post button { font: inherit; padding: 3px 10px; border: 1.5px solid #1fa463; border-radius: 8px; background: #fff; color: #1c2430; cursor: pointer; }
   .ob-post button:hover { background: #eef8f2; }
-  /* Take the tour: Skip tour's look, in its place */
+  /* Take the tour: Skip tour's place and shape, the way forward's green */
   .ob-again { position: absolute; z-index: 3; top: 0.6rem; right: 0.8rem; height: 1.6rem; padding: 0 0.55rem; border: 0; border-radius: 8px;
-              font: 0.78rem/1 system-ui, sans-serif; color: #1c2430; background: rgba(228, 224, 212, 0.9); cursor: pointer; white-space: nowrap;
-              box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
-  .ob-again:hover { background: rgba(239, 236, 227, 0.9); }
+              font: 600 0.78rem/1 system-ui, sans-serif; color: #fff; background: rgba(31, 164, 99, 0.9); cursor: pointer; white-space: nowrap;
+              box-shadow: 0 0 0 2px #fff, 0 1px 4px rgba(0, 0, 0, 0.25); }   /* the white ring, as Continue's */
+  .ob-again:hover { background: rgba(23, 140, 84, 0.9); }
   /* the methods' steps: a button row, the live numbers, the Atari collisions chart */
   #intro .mt p { margin: 0 0 0.35rem; } #intro .mt p:last-child { margin: 0; }
-  #intro .mt-row { display: flex; gap: 0.5rem; margin-top: 0.35rem !important; }
+  #intro .mt-row { display: flex; gap: 0.5rem; margin-top: 0.35rem !important; margin-right: calc(0.4rem - 0.75rem - 1.6rem) !important; }   /* the right edge in line with ✕'s (0.4rem in; the bubble pads 0.75rem, the box 1.6rem) */
   #intro .mt-row button { border: 1.5px solid #1fa463; border-radius: 8px; background: rgba(255, 255, 255, 0.9); color: #1c2430; }
   #intro .mt-row button:hover { background: rgba(238, 248, 242, 0.9); }
-  #intro .mt-row button.cta { background: rgba(31, 164, 99, 0.9); color: #fff; font-weight: 600; }
+  #intro .mt-row button.cta { margin-left: auto; background: rgba(31, 164, 99, 0.9); color: #fff; font-weight: 600; }   /* the main action: on the right */
   #intro .mt-row button.cta:hover { background: rgba(23, 140, 84, 0.9); }
   #intro .mt-row button.nudge { animation: tr-hint 1.8s ease-in-out infinite; }
   #intro .mt-stat { display: flex; align-items: center; gap: 1.2rem; flex-wrap: wrap; color: #4a5361; font-variant-numeric: tabular-nums; }
@@ -584,7 +606,7 @@ css.textContent += `
           font: 600 1rem/1 system-ui, sans-serif; cursor: pointer; }
   .mw-x:hover { border-color: #1fa463; background: #eef8f2; }
   .mw-m { border: 1.5px solid #e6e2d6; border-radius: 12px; background: #fbfaf6; }
-  .mw-m.open { border-color: #1fa463; }
+  .mw-m.open, .mw-m.new { border-color: #1fa463; }   /* a method not tried yet: green, waiting */
   .mw-top { display: flex; align-items: center; gap: 0.75rem; width: 100%; padding: 0.4rem 0.9rem; border: 0; background: none; font: inherit; color: inherit;
             text-align: left; cursor: pointer; border-radius: 12px; }
   .mw-top:hover { background: #f3f1ea; }
@@ -593,13 +615,16 @@ css.textContent += `
   .mw-ic { flex: none; width: 1.6rem; height: 1.6rem; fill: none; stroke: #1c2430; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   .mw-pro { color: #6f6b61; font-size: 0.8rem; }
   .mw-badge { flex: none; padding: 0.1rem 0.5rem; border-radius: 6px; background: #e4e0d4; font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
-  .mw-badge.ok { background: #1fa463; color: #fff; } .mw-badge.bad { background: #fde3df; color: #b0302a; }
+  .mw-badge.ok { background: #f2c230; color: #3d2c00; }   /* passed: gold, not the way-forward green */ .mw-badge.bad { background: #fde3df; color: #b0302a; }
   .mw-chev { flex: none; width: 0.55rem; height: 0.55rem; margin: 0 0.3rem 0.25rem; border: solid #6f6b61; border-width: 0 2px 2px 0; transform: rotate(45deg); transition: transform 0.3s; }
   .mw-m.open .mw-chev { transform: rotate(-135deg); margin-bottom: -0.25rem; }   /* down when folded, up when open */
   .mw-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.3s ease; }   /* folds to nothing, smoothly */
   .mw-m.open .mw-body { grid-template-rows: 1fr; }
   .mw-fold { min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 0.4rem; padding: 0 0.9rem; }
   .mw-m.open .mw-fold { padding-bottom: 0.7rem; }
+  .mw-share { margin-top: 0.35rem; padding-top: 0.6rem; border-top: 1px solid #e6e2d6; }
+  /* every test passed: a green flash runs over the share buttons left to right (0.12 s apart), then a pause of about 3 s */
+  .mw-share .lit { background: #1fa463; border-color: #1fa463; color: #fff; }   /* the running light (every test passed) */
   .mw-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
   .mw-cols p, .mw-cols ul { margin: 0 0 0.4rem; } .mw-cols > div > :last-child { margin-bottom: 0; }
   .mw-cols ul { padding-left: 1.1rem; } .mw-cols li { margin: 0.05rem 0; }
@@ -608,7 +633,8 @@ css.textContent += `
   #intro .ob-go { margin-left: auto; } #intro .ob-nav { visibility: hidden; } #intro .ob-nav.on { visibility: visible; }
   #intro .ob-nav button { background: rgba(255, 255, 255, 0.9); border: 1.5px solid #1fa463; border-radius: 8px; color: #1c2430; }   /* the bubbles' white */
   #intro .ob-nav button:hover { background: rgba(238, 248, 242, 0.9); }
-  #intro .ob-nav .ob-end { background: #2a64cc; border-color: #1f4fa8; color: #fff; font-weight: 600; } #intro .ob-nav .ob-end:hover { background: #1f4fa8; }   /* Other models: the tour's end, Move!'s blue (green mixes with the road's grass) */
+  #intro .ob-nav button.cta { background: rgba(31, 164, 99, 0.9); border-color: #1a8f56; color: #fff; font-weight: 600;
+                              box-shadow: 0 0 0 2px #fff, 0 1px 4px rgba(0, 0, 0, 0.25); }   /* a white ring: clear of the grass */ #intro .ob-nav button.cta:hover { background: rgba(23, 140, 84, 0.9); }   /* the way forward: green, on every screen */
   #intro p.gap { margin: 0; height: 1em; }
   #intro .ob-cd { font-weight: 700; color: #d33a2c; font-variant-numeric: tabular-nums; white-space: nowrap; }   /* the countdown to the crash */
   /* the flashcards: a bubble-style window over the network */
@@ -626,6 +652,8 @@ css.textContent += `
   .fc-head button { width: 1.7rem; height: 1.7rem; padding: 0; border: 1.5px solid #d6d1c3; border-radius: 50%; background: #fff; color: #1c2430;
                     font: 600 1.05rem/1 system-ui, sans-serif; cursor: pointer; }
   .fc-head button:hover:not(:disabled) { border-color: #1fa463; background: #eef8f2; } .fc-head button:disabled { opacity: 0.3; cursor: default; }
+  .fc-head button.go { border-color: #1fa463; background: #1fa463; color: #fff; } .fc-head button.go:hover { background: #1a8f56; }   /* ›, the way forward (app.js) */
+  .fc-deck .slot.go { border: 1.5px solid #1fa463; background: #1fa463; } .fc-deck .slot.go .n { color: #fff; }   /* on the last card: the next open one */
   .fc h3 { margin: 0; font-size: 1.35em; line-height: 1.25; }
   .fc .sees { margin: 0; font-size: 1em; }
   .fc .ask { margin: 0.15rem 0 0; max-width: 22rem; } .fc .ask button { font-size: 1em; padding: 0.45rem 0.6rem; }
@@ -634,8 +662,8 @@ css.textContent += `
   .fc-deck { display: grid; grid-template-columns: repeat(4, 3rem); gap: 1rem 0.8rem; justify-content: start; padding-bottom: 0.5rem; }
   .fc-deck .slot { cursor: pointer; }
   .fc-foot { margin-top: auto; display: flex; justify-content: flex-end; align-items: center; }
-  .fc-foot .fc-go { font: inherit; padding: 4px 16px; background: #fff; border: 1.5px solid #1fa463; border-radius: 8px; color: #1c2430; cursor: pointer; }   /* as the tour's buttons */
-  .fc-foot .fc-go:hover { background: #eef8f2; }
+  .fc-foot .fc-go { font: inherit; font-weight: 600; padding: 4px 16px; background: #1fa463; border: 1.5px solid #1fa463; border-radius: 8px; color: #fff; cursor: pointer; }   /* the way forward, green */
+  .fc-foot .fc-go:hover { background: #1a8f56; }
   .fc-foot .fc-auto { font: inherit; font-size: 0.9em; padding: 0; border: 0; background: none; color: #1c2430; opacity: 0.6; cursor: pointer; }   /* as Skip tour */
   .fc-foot .fc-auto:hover { opacity: 1; text-decoration: underline; background: none; }
   /* training: the stage's text and the controls in the bubble; the board under it, the two piles side by side, the
@@ -646,7 +674,8 @@ css.textContent += `
   .ob-about #board, .ob-about #intro .ob-nav { visibility: hidden !important; } .ob-about #intro .tr > :not(.tr-intro) { display: none; }
   #intro .tr-intro { display: flex; flex-direction: column; } #intro .tr-intro p, #intro .tr-intro ul { margin: 0 0 0.45rem; }
   #intro .tr-intro ul { padding-left: 1.3rem; } #intro .tr-intro li { margin-bottom: 0.2rem; }
-  #intro .tr-intro .tr-ok { align-self: flex-end; padding: 3px 22px; border-radius: 8px; }
+  #intro .tr-intro .tr-ok { align-self: flex-end; padding: 3px 22px; border-radius: 8px; visibility: hidden; opacity: 0; transition: opacity 0.4s; }
+  #intro .tr-intro .tr-ok.on { visibility: visible; opacity: 1; }
   #intro .tr-pi { display: inline-flex; vertical-align: -0.15em; color: #1c2430; }   /* Play, in the text: a plain black sign, not a button to press */
   #intro .ob-down { display: inline-block; font-size: 1.2em; line-height: 1; font-weight: 700; animation: ob-down 1.6s ease-in-out infinite; }   /* points down to the network */
   @keyframes ob-down { 50% { transform: translateY(0.25em); } }
@@ -654,15 +683,15 @@ css.textContent += `
   #intro .tr-ctl { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.35rem; }
   #intro .tr-ctl button { width: 2.2rem; background: rgba(255, 255, 255, 0.9); border: 1.5px solid #1fa463; border-radius: 8px; color: #1c2430; padding: 2px 0; display: inline-flex; align-items: center; justify-content: center; height: 1.55rem; }
   #intro .tr-ctl button:hover:not(:disabled) { background: rgba(238, 248, 242, 0.9); } #intro .tr-ctl button:disabled { opacity: 0.45; cursor: default; }
-  #intro .tr-ctl .tr-play { background: rgba(31, 164, 99, 0.9); color: #fff; } #intro .tr-ctl .tr-play:hover:not(:disabled) { background: rgba(23, 140, 84, 0.9); }   /* Play: the one to press */
+  #intro .tr-ctl .go { background: rgba(31, 164, 99, 0.9); color: #fff; } #intro .tr-ctl .go:hover:not(:disabled) { background: rgba(23, 140, 84, 0.9); }   /* the one to press: Play, then To the end (app.js) */
   #intro .tr-ctl .tr-play.nudge { animation: tr-hint 1.8s ease-in-out infinite; }   /* until training first starts: a soft glow, no growing (it would overlap its neighbours) */
   @keyframes tr-hint { 50% { box-shadow: 0 0 0 3px rgba(31, 164, 99, 0.3); } }
   #intro .tr-ctl label { display: flex; align-items: center; gap: 0.4rem; color: var(--muted); white-space: nowrap; }
   #intro .tr-spd { margin-left: auto; } #intro .tr-spd.off { opacity: 0.4; }
   /* drawn by hand: the switches' light blue on a white bubble (an accent colour this light gets a near-black track) */
   #intro .tr-spd input { width: 6rem; appearance: none; height: 4px; border-radius: 2px; background: #d6d1c3; }
-  #intro .tr-spd input::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #cfe0fa; border: 1.5px solid #7fa3dc; }
-  #intro .tr-spd input::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #cfe0fa; border: 1.5px solid #7fa3dc; }
+  #intro .tr-spd input::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #1fa463; border: 1.5px solid #1a8f56; }
+  #intro .tr-spd input::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #1fa463; border: 1.5px solid #1a8f56; }
   /* the epoch slider, once trained: between Back and Continue, quiet (small, grey) */
   #intro .tr-ep { flex: 0.85 1 0; display: flex; align-items: center; gap: 0.4rem; margin: 0 1rem; font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
   #intro .tr-ep[hidden] { display: none; }
@@ -708,14 +737,15 @@ css.textContent += `
   .ob-count.on { animation: ob-count 0.8s ease-out; }
   @keyframes ob-count { from { transform: translate(-50%, -50%) scale(1.6); opacity: 0; } 25% { transform: translate(-50%, -50%) scale(1); opacity: 1; } }   /* the test passed: Safely driven grows a little and back */
   .ob-cue { position: absolute; z-index: 3; transform: translate(-50%, -100%); opacity: 0; pointer-events: none; }   /* Copycat's countdown: the arrow down to Move!, white as the count */
-  .ob-cue svg { display: block; width: 2.6rem; fill: #fff; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3)); }   /* no outline: a soft shadow keeps it on the light road */
+  .ob-cue svg { display: block; width: 2.6rem; fill: #1fa463; stroke: #fff; stroke-width: 2.5; stroke-linejoin: round; paint-order: stroke;
+                filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3)); }   /* the way forward's green, with the white ring */
   .ob-cue.on { animation: ob-cue 0.8s ease-out; }
   @keyframes ob-cue { 0% { opacity: 0; transform: translate(-50%, -125%); } 25%, 75% { opacity: 1; transform: translate(-50%, -100%); } 100% { opacity: 0; transform: translate(-50%, -100%); } }   /* in with each number, as it lands (ob-count: 25%); out just before the next */
   @keyframes ob-hl { 50% { stroke-width: calc(var(--sw) * 2.2); opacity: 1; } }
   #net .w.ob-hl { animation: ob-hl 0.75s ease-in-out; }   /* a line, thicker and back */
   #link-line.ob-pulse { animation: ob-line 0.75s ease-in-out; }`;
-ROAD.append(intro); modelSwitch(false);
-later(0.5, () => { intro.classList.add("on"); show(0); });
+if (seen()) { intro.classList.add("on"); finish(); }   // as if Skip tour was clicked at once
+else { ROAD.append(intro); modelSwitch(false); later(0.5, () => { intro.classList.add("on"); show(0); }); }
 const explainer = () => {   // the explainer bubbles, not shown for now
 
 later(2, () => {

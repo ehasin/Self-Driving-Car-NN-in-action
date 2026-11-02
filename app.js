@@ -140,7 +140,7 @@ function decide(d) {
   const nets = d.user ? 0 : d.policy ? d.policy(x) : netMove(d.net, x);   // a 50/50 tie stays
   const action = d.policy ? nets : d.user || d.wish || !autopilot ? d.wish : nets;   // your Move! wins for this turn; then the network drives on (Autopilot on)
   if (!d.user && !d.wish && action) { moveBtn.classList.add("press"); setTimeout(() => moveBtn.classList.remove("press"), 350); }   // the network presses Move!
-  if (d.wish && moveBtn.disabled) d.movedAt = d.base;   // your click: this is its lane change
+  if (d.wish && moveBtn.classList.contains("moving")) d.movedAt = d.base;   // your click: this is its lane change
   d.wish = 0; d.last = { x, action };
   const r = step(d.run, action);
   d.a = from; d.b = d.run.lane; d.decided = true; d.crashNext = r.crashed;
@@ -181,13 +181,25 @@ function tick(now) {
     }
   }
   view.pos = d.base + d.f; view.lane = d.a + (d.b - d.a) * smooth((d.f - DEC) / SLIDE);
-  if (d.movedAt != null && (d.base > d.movedAt || d.f >= DEC + SLIDE)) { d.movedAt = null; moving(false); }   // the lane change is done
+  if (d.movedAt != null && (d.base > d.movedAt || d.f >= DEC + SLIDE)) {   // the lane change is done; a click made meanwhile: the next
+    d.movedAt = null; moving(false);
+    if (d.again) { d.again = false; d.wish = 1; moving(true); }
+  }
   if (!view.crashed) view.dist = meters(view.pos - d.zero);
   drawView();
 }
 // Your Move!: until the lane change is done, the button is a grey "Moving..." (a click waits for the next decision point).
-function moving(on) { moveBtn.disabled = on; moveBtn.classList.toggle("moving", on); moveBtn.textContent = on ? "Moving..." : "Move!"; }
-moveBtn.addEventListener("click", () => { if (drive && drive.age < 0 && !drive.wish && !drive.policy) { drive.wish = 1; moving(true); } });   // yours, or a network's drive (it overrides one turn)
+// A click while it is grey is kept, and is the next lane change once this one is done (one, however many clicks).
+function moving(on) { moveBtn.classList.toggle("moving", on); moveBtn.textContent = on ? "Moving..." : "Move!"; }
+function press() {                                     // yours, or a network's drive (it overrides one turn)
+  if (!drive || drive.age >= 0 || drive.policy) return;
+  if (moveBtn.classList.contains("moving")) drive.again = true;
+  else if (!drive.wish) { drive.wish = 1; moving(true); }
+}
+// It counts as the button goes down: on release, the pressed button (5px lower, smaller) is no longer under a press near its
+// edge, and the click was lost. The keyboard's Enter and Space: a click with no press.
+moveBtn.addEventListener("pointerdown", (e) => { if (e.button === 0) press(); });
+moveBtn.addEventListener("click", (e) => { if (e.detail === 0) press(); });
 
 // The road standing still: a parked car in each lane, `mine` and `other` rows ahead. Returns the radar's values.
 function showScene(mine, other, lane, tags = false) {
@@ -379,7 +391,10 @@ requestAnimationFrame(() => setModel(model));
 
 function drawNet() {
   const { net, x, act, upto } = panel, lv = upto || 9, wv = mode === "weights", q2 = net?.outputs === 2;
-  const fp = net && x ? (q2 ? { fwd: forward(net, x), p: null } : probs(net, x)) : null;
+  // a network with other outputs than the panel's (Trial & Error's still on show as Copycat's panel is built): no values, till
+  // the method shows its own (it crashed here, and the method's bubble stayed empty)
+  const fits = !net || (q2 ? 2 : 1) === outs;
+  const fp = net && x && fits ? (q2 ? { fwd: forward(net, x), p: null } : probs(net, x)) : null;
   const out = !wv && lv > 4 && fp, nums = show.values && !wv;
   const live = (e) => !wv && show.values && fp && lv > (e.layer === 1 ? 1 : 3);   // the line shows its impact
   const part = (e) => (e.p === "W1" ? x[e.idx % 2] : fp.fwd.h[e.idx % 3]);   // the value the line carries from below
@@ -576,6 +591,9 @@ window.tryCards = () => {
   trainToEnd(); stopDrive(); stepNo = 6; distEdit = true;
   board.hidden = false; roadCanvas.hidden = resetBtn.hidden = $("speed").hidden = $("dash").hidden = true; drawLink();
   if (!$("pile-learn").childElementCount) renderPiles();   // no deal again when they're there
+  document.querySelectorAll(".card.deal").forEach((e) => {   // dealt (here or as training ended): twice as fast as in training
+    if (!e.style.animationDuration) { e.style.animationDelay = parseFloat(e.style.animationDelay) / 2 + "s"; e.style.animationDuration = "0.25s"; }
+  });
   document.querySelectorAll(".card").forEach((e) => e.classList.remove("dim", "err"));
   showCards(T.net); renderChart(); showNet(T.net);
 };
@@ -919,18 +937,21 @@ window.flashcards = (box, { done, go }) => {
   const draw = (pop = -1) => {
     const c = cards[current], fb = c.answer < 0 ? "" : c.answer === c.right ? `<p class="good">✓ Good call.</p>`
       : `<div class="hint">${hintFor(c)}</div>`;
+    // The green, one way forward: an open card, its right answer; an answered one, › (on the last card, the next open
+    // card in the deck); all answered, Continue
+    const on = c.answer >= 0 && !allAnswered() ? (current < 7 ? "next" : nextUnanswered()) : null;
     box.innerHTML = `<div class="fc-q">
         <div class="fc-head"><button class="fc-prev" ${current ? "" : "disabled"} title="Previous situation">‹</button>
-          <span class="kicker">Situation ${current + 1} of 8</span><button class="fc-next" ${current < 7 ? "" : "disabled"} title="Next situation">›</button></div>
+          <span class="kicker">Situation ${current + 1} of 8</span><button class="fc-next${on === "next" ? " go" : ""}" ${current < 7 ? "" : "disabled"} title="Next situation">›</button></div>
         <h3>What should the blue car do?</h3>
         <p class="sees">Your lane: a car ${c.mine * 10} m ahead.<br>Other lane: a car ${c.other * 10} m ahead.</p>
-        <div class="ask">${ANSWERS.map((a, i) => `<button data-a="${i}" class="${c.answer === i ? "picked" : ""}">${a}</button>`).join("")}</div>
+        <div class="ask">${ANSWERS.map((a, i) => `<button data-a="${i}" class="${c.answer === i ? "picked" : ""}${i === c.right && c.answer < 0 ? " cta" : ""}">${a}</button>`).join("")}</div>
         <div class="fc-fb">${fb}</div></div>
       <div class="fc-set">
         <div class="fc-head"><span class="kicker">Labeled cards</span><span class="fc-count">${cards.filter((d) => d.answer >= 0).length} of 8</span></div>
         <div class="fc-deck">${cards.map((d, i) => d.answer < 0
           ? i === current ? `<button class="slot cur" data-i="${i}" title="Situation ${i + 1}: your call">${cardSvg(d, { labels: false })}</button>`   // its cars, no answer yet
-            : `<button class="slot" data-i="${i}"><span class="n">${i + 1}</span></button>`
+            : `<button class="slot${i === on ? " go" : ""}" data-i="${i}"><span class="n">${i + 1}</span></button>`
           : `<button class="slot full${i === current ? " cur" : ""}${pop === 8 ? " pop" : i === pop ? " pop-b" : ""}" data-i="${i}" title="Situation ${i + 1}: ${ANSWERS[d.answer]}">${cardSvg(d, { labels: false })}<span class="badge${d.answer ? " move" : ""}${d.answer !== d.right ? " off" : ""}">${ANSWERS[d.answer]}</span></button>`).join("")}</div>
         <div class="fc-foot">${allAnswered() ? `<button class="fc-go">Continue</button>` : `<button class="fc-auto">Auto-complete</button>`}</div></div>`;
     box.querySelectorAll(".ask button").forEach((b) => b.onclick = () => {
@@ -1021,6 +1042,8 @@ window.training = (bar, done, reset) => {   // reset(): Reset confirmed (the tou
     q(".tr-reset").disabled = busy;
     q(".tr-play").innerHTML = playing ? TAPE.pause : TAPE.play; q(".tr-play").title = playing ? "Pause" : "Play";
     q(".tr-play").classList.toggle("nudge", !played && !playing && !busy && !pos());   // pulses until training first starts
+    const begun = played || playing || pos() > 0;        // the green: Play until training begins, then To the end; trained, the tour's Continue
+    q(".tr-play").classList.toggle("go", !begun && !end); q(".tr-end").classList.toggle("go", begun && !end);
     spdIn.disabled = end; q(".tr-spd").classList.toggle("off", end);
     const at = sub ? T.epoch - (sub === 3 ? 1 : 0) : shown;   // the last epoch done (or, once trained, the best)
     epIn.max = end ? last : EPOCHS; epIn.value = at; epIn.disabled = busy;

@@ -59,6 +59,7 @@ Then open http://localhost:5317 (if that port is taken, the server picks the nex
 | `learner.js` | Copycat and Trial & Error (Deep Q-learning with a replay memory) |
 | `render.js` | The 3D road view on a canvas |
 | `random.js` | Seeded random numbers, so a road can be replayed |
+| `share.js` | The share bar (under the methods and the explainer) and the footer's Share, as plain links |
 | `site.css`, `desktop.css`, `mobile.css` | Shared look, then desktop and phone layouts |
 | `docs/` | Screenshots for this README |
 | `serve.mjs` | Tiny local static server |

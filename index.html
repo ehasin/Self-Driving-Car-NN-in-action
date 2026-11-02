@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>Train a self-driving neural network</title>
+  <meta name="description" content="Teach a neural network to drive – a visual and interactive explainer.">
   <link rel="stylesheet" href="site.css">
   <style>
     /* Three layers of style: this block is shared by desktop and phones; desktop.css (wider than 720px) and mobile.css
@@ -105,7 +106,7 @@
     /* step 5: the question and the deck */
     .ask { display: flex; gap: 0.5rem; margin: 0 0 0.6rem; }
     .ask button { flex: 1; font-size: 1.05rem; padding: 0.55rem 0.6rem; font-weight: 600; }
-    .ask button.picked { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+    .ask button.picked { box-shadow: 0 0 0 2px #fff, 0 0 0 4.5px var(--ink); }   /* your answer: a ring around it (the right one is green while cards are open) */
     .sees { font-size: 0.82rem; color: var(--muted); margin: 0 0 0.6rem; }
     .hint { position: relative; border: 1.5px solid #c0392b; border-radius: 10px; background: #fff6f3; padding: 0.55rem 0.75rem; font-size: 0.82rem; line-height: 1.45; margin: 0 0 0.6rem; }
     .good { color: #1a8a52; font-weight: 650; margin: 0 0 0.6rem; }
@@ -234,6 +235,7 @@
     .explain p, .explain ul { margin: 0 0 12px; }
     .explain ul { padding-left: 22px; }
     .explain li { margin-bottom: 6px; }
+    .share-end { margin-top: 32px; }   /* the share bar (share.js), above Back to top */
     .totop { text-align: center; margin-top: 28px !important; }
     .totop button { font-size: 14px; }
 
@@ -310,8 +312,8 @@
     <p>Trial &amp; Error has two outputs, one per move: <strong>Stay</strong> and <strong>Move!</strong>. Each estimates the points that move will earn from here on, so they are scores, not probabilities. The car takes the higher one.</p>
     <h2>Flashcards: learning from labelled examples</h2>
     <p>You label 8 road situations with the right move. The network studies 4 of them, the <em>training set</em>. The other 4, the <em>validation set</em>, are only checked. They help us see whether it can apply what it learned to examples it did not study.</p>
-    <p>Training runs in cycles called <em>epochs</em>. Each cycle checks the network's answers and adjusts its weights and biases to reduce mistakes. This adjustment is called <em>backpropagation</em>. The other four cards check whether it can apply what it learned to other examples. Training stops once those answers are right and further improvement is small, or after 10 cycles.</p>
-    <p>This is <strong>supervised learning: learning from examples with answers attached</strong>, as in the <a href="https://github.com/ehasin/Visual-Digit-Recognition-CNN-in-action">digit demo</a>. The network has no idea what is right: it learns your answers. Label a card wrong, and the test road shows the wrong move it learned.</p>
+    <p>Training runs in cycles called <em>epochs</em>. Each cycle, the network works out the output error and adjusts its weights and biases backwards through the layers. This is called <strong>backpropagation</strong>. The other four cards check whether it can apply what it learned to other examples. Training stops once those answers are right and further improvement is small, or after 10 cycles.</p>
+    <p>This is <strong>supervised learning: learning from examples with answers attached</strong>, as in the <a href="https://github.com/ehasin/Visual-Digit-Recognition-CNN-in-action">digit demo</a>. The network has no idea what is right: it learns your answers. An incorrect label on a training card can teach it the wrong move. Incorrect labels on validation cards can disrupt the learning process.</p>
     <h2>Copycat: learning by watching you</h2>
     <p>You drive 200 m, changing lane with <strong>Move!</strong>. Every 10 m, what the radar sees becomes a question and your move its answer, and the network learns from it straight away. A collision is learned as the opposite move.</p>
     <p>This is <em>imitation learning</em>, or <em>behavioural cloning</em>. Your driving examples matter: if you only change lanes at the last moment, it may learn that habit too. It has only practised the situations you showed it.</p>
@@ -325,7 +327,7 @@
     <p>Collisions cost by far the most. Unnecessary lane changes cost points. Together, these rules encourage the car to move only when needed, and early enough.</p>
     <p>At first, half its moves are random, to explore its options; the share falls to 2% over its first 400 decisions, on a fixed schedule. It remembers what it saw, what it did, and the points it got, and keeps replaying samples of those memories, adjusting its weights so each score better predicts the points that move really leads to.</p>
     <p>This is <strong>reinforcement learning: learning from the consequences of actions.</strong> The method used here is called <em>Deep Q-learning</em>. The network discovers how to earn points. We decide what earns them.</p>
-    <p>Deep Q-learning made its name on old Atari video games. In 2015, DeepMind showed that one network could learn 49 of them from the screen and the score alone, playing many as well as a professional games tester. DeepMind went on to combine deep networks with reinforcement learning in AlphaGo, which in 2016 beat Lee Sedol, one of the world's best Go players. Its successor, AlphaGo Zero, learned Go by playing against itself alone. The story is told in the free documentary <a href="https://www.youtube.com/watch?v=WXuK6gekU1Y">AlphaGo – The Movie</a>.</p>
+    <p>Deep Q-learning made its name on old Atari video games. In 2015, DeepMind showed that the same network architecture, trained separately for each game, could learn to play 49 Atari games from the screen and the score alone, playing many as well as a professional games tester. DeepMind went on to combine deep networks with reinforcement learning in AlphaGo, which in 2016 beat Lee Sedol, one of the world's best Go players. Its successor, AlphaGo Zero, learned Go by playing against itself alone. The story is told in the free documentary <a href="https://www.youtube.com/watch?v=WXuK6gekU1Y">AlphaGo – The Movie</a>.</p>
     <h2>What has it actually learned?</h2>
     <p>Whatever the method, the result is the same kind of thing: fewer than 20 numbers, its weights and biases. They hold a strategy for this task only: two lanes, parked cars, and a radar that sees 80 m ahead.</p>
     <p>It cannot anticipate obstacles beyond its view. Passing one test road also does not guarantee success on every road. Once trained, its weights stay fixed: when it drives on, it uses what it learned, and learns nothing new.</p>
@@ -343,16 +345,18 @@
       <li><a href="https://huggingface.co/learn/deep-rl-course/unit3/introduction">Deep Q-Learning</a> in the Hugging Face Deep RL Course:
         a free, hands-on course; this unit covers the method Trial &amp; Error uses.</li>
       <li><a href="https://www.nature.com/articles/nature14236">Human-level control through deep reinforcement learning</a>, DeepMind, Nature 2015:
-        the paper that introduced Deep Q-learning, on Atari games.</li>
+        the landmark 2015 paper demonstrating Deep Q-learning across 49 Atari games.</li>
       <li><a href="https://www.youtube.com/watch?v=WXuK6gekU1Y">AlphaGo – The Movie</a>, Google DeepMind:
         the award-winning documentary about AlphaGo's match against Lee Sedol, free to watch.</li>
     </ul>
+    <div class="share-end" data-share></div>
     <p class="totop"><button type="button" onclick="window.scrollTo({ top: 0, behavior: 'smooth' })">Back to top</button></p>
   </section>
 
-  <footer>
+  <footer class="demo-foot">
     <div class="wrap">
       <span>Built by <a href="https://www.linkedin.com/in/evgenihasin/"><strong>Evgeni&nbsp;Hasin</strong></a></span>
+      <button type="button" class="share-btn" data-share-button></button>
       <ul>
         <li><a href="https://github.com/ehasin/Self-Driving-Car-NN-in-action">Source on GitHub</a></li>
       </ul>
@@ -361,5 +365,6 @@
 
   <script type="module" src="app.js"></script>
 <script type="module" src="onboard.js"></script>
+<script type="module" src="share.js"></script>
 </body>
 </html>
