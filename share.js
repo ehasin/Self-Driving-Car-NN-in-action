@@ -4,7 +4,7 @@ const css = document.createElement("style");
 css.textContent = `
   .share { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.4rem; font: 0.85rem/1.2 system-ui, sans-serif; }
   .share-h { flex-basis: 100%; text-align: center; margin: 0 0 0.15rem; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em;
-             text-transform: uppercase; color: #6f6b61; }
+             text-transform: uppercase; color: #1fa463; }   /* green: an invitation */
   .share a, .share button { padding: 0.3rem 0.7rem; border: 1.5px solid #d6d1c3; border-radius: 999px; background: #fff; color: #1c2430;
                             font: inherit; text-decoration: none; cursor: pointer; white-space: nowrap; }
   .share a:hover, .share button:hover { border-color: #1fa463; background: #eef8f2; }

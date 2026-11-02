@@ -465,20 +465,7 @@ function openMethods(open) {
         <div><p class="mw-k">How it learns</p><p>${m.how}</p><p class="mw-k">Here</p><p>${m.here}</p></div>
         <div><p class="mw-k">In the real world</p><ul>${m.uses.map((u) => `<li>${u}</li>`).join("")}</ul><p class="mw-k">The catch</p><p>${m.catch}</p></div></div>
         <button class="cta mw-go" data-k="${m.k}">${m.go}</button></div></div></section>`).join("")}<div class="mw-share"></div></div>`;
-  const share = mw.querySelector(".mw-share");
-  shareBar(share);                                       // under the methods
-  // Every test passed: a green light runs over the share buttons, one at a time (0.06 s each), then a 2 s pause, again and
-  // again while the window is open.
-  if (METHODS.every((m) => res[m.k] && !res[m.k].crashed) && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    const bs = [...share.querySelectorAll("a, button")];
-    let i = 0;
-    const run = () => {
-      if (!share.isConnected) return;                    // closed (each opening builds its own)
-      bs.forEach((b, k) => b.classList.toggle("lit", k === i));
-      if (i < bs.length) { i++; setTimeout(run, 60); } else { i = 0; setTimeout(run, 2000); }
-    };
-    setTimeout(run, 600);
-  }
+  shareBar(mw.querySelector(".mw-share"));                // under the methods
   mw.querySelector(".mw-x").onclick = closeMethods;
   mw.querySelectorAll(".mw-top").forEach((b) => {
     b.onclick = () => {                                // open this one (or fold it), fold the others
@@ -623,8 +610,6 @@ css.textContent += `
   .mw-fold { min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 0.4rem; padding: 0 0.9rem; }
   .mw-m.open .mw-fold { padding-bottom: 0.7rem; }
   .mw-share { margin-top: 0.35rem; padding-top: 0.6rem; border-top: 1px solid #e6e2d6; }
-  /* every test passed: a green flash runs over the share buttons left to right (0.12 s apart), then a pause of about 3 s */
-  .mw-share .lit { background: #1fa463; border-color: #1fa463; color: #fff; }   /* the running light (every test passed) */
   .mw-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
   .mw-cols p, .mw-cols ul { margin: 0 0 0.4rem; } .mw-cols > div > :last-child { margin-bottom: 0; }
   .mw-cols ul { padding-left: 1.1rem; } .mw-cols li { margin: 0.05rem 0; }
